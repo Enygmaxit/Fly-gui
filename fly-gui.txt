@@ -1,0 +1,165 @@
+--// SERVICES
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local player = Players.LocalPlayer
+
+--// VARS
+local flying = false
+local flySpeed = 50
+local bodyVelocity, bodyGyro, connection
+
+--// PEGAR CONTROL MODULE (SUPORTE MOBILE)
+local function getControlModule()
+    local ok, module = pcall(function()
+        return require(player:WaitForChild("PlayerScripts")
+            :WaitForChild("PlayerModule")
+            :WaitForChild("ControlModule"))
+    end)
+    return ok and module or nil
+end
+
+local controlModule = getControlModule()
+
+--// FUNÇÕES
+local function getRoot()
+    local char = player.Character or player.CharacterAdded:Wait()
+    return char:WaitForChild("HumanoidRootPart")
+end
+
+local function startFly()
+    local root = getRoot()
+    flying = true
+
+    bodyVelocity = Instance.new("BodyVelocity")
+    bodyVelocity.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+    bodyVelocity.Velocity = Vector3.zero
+    bodyVelocity.Parent = root
+
+    bodyGyro = Instance.new("BodyGyro")
+    bodyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+    bodyGyro.P = 10000
+    bodyGyro.CFrame = root.CFrame
+    bodyGyro.Parent = root
+
+    connection = RunService.Heartbeat:Connect(function()
+        if not flying then return end
+
+        local cam = workspace.CurrentCamera
+        local moveVec = Vector3.zero
+
+        if controlModule then
+            moveVec = controlModule:GetMoveVector()
+        end
+
+        local velocity = Vector3.zero
+
+        if moveVec.Magnitude > 0 then
+            local dir = cam.CFrame:VectorToWorldSpace(moveVec)
+            velocity = dir.Unit * flySpeed
+        end
+
+        bodyVelocity.Velocity = velocity
+        bodyGyro.CFrame = cam.CFrame
+    end)
+end
+
+local function stopFly()
+    flying = false
+
+    if connection then connection:Disconnect() end
+    if bodyVelocity then bodyVelocity:Destroy() end
+    if bodyGyro then bodyGyro:Destroy() end
+end
+
+local function toggleFly()
+    if flying then
+        stopFly()
+    else
+        startFly()
+    end
+end
+
+--// GUI
+local gui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
+
+local frame = Instance.new("Frame", gui)
+frame.Size = UDim2.new(0, 200, 0, 120)
+frame.Position = UDim2.new(0.5, -100, 0.5, -60)
+frame.BackgroundColor3 = Color3.fromRGB(30,30,30)
+frame.Active = true -- IMPORTANTE
+
+local toggleBtn = Instance.new("TextButton", frame)
+toggleBtn.Size = UDim2.new(1, -20, 0, 40)
+toggleBtn.Position = UDim2.new(0, 10, 0, 10)
+toggleBtn.Text = "Fly: OFF"
+toggleBtn.BackgroundColor3 = Color3.fromRGB(200,50,50)
+
+local speedBox = Instance.new("TextBox", frame)
+speedBox.Size = UDim2.new(1, -20, 0, 40)
+speedBox.Position = UDim2.new(0, 10, 0, 60)
+speedBox.PlaceholderText = "Velocidade"
+speedBox.Text = ""
+
+--// DRAG (FUNCIONA EM PC E MOBILE)
+local dragging = false
+local dragInput
+local dragStart
+local startPos
+
+frame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 
+    or input.UserInputType == Enum.UserInputType.Touch then
+        
+        dragging = true
+        dragStart = input.Position
+        startPos = frame.Position
+
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+frame.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement 
+    or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        local delta = input.Position - dragStart
+
+        frame.Position = UDim2.new(
+            startPos.X.Scale,
+            startPos.X.Offset + delta.X,
+            startPos.Y.Scale,
+            startPos.Y.Offset + delta.Y
+        )
+    end
+end)
+
+--// EVENTOS
+toggleBtn.MouseButton1Click:Connect(function()
+    toggleFly()
+
+    if flying then
+        toggleBtn.Text = "Fly: ON"
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(50,200,50)
+    else
+        toggleBtn.Text = "Fly: OFF"
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(200,50,50)
+    end
+end)
+
+speedBox.FocusLost:Connect(function()
+    local num = tonumber(speedBox.Text)
+    if num then
+        flySpeed = num
+    end
+end)
